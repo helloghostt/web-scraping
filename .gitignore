@@ -1,0 +1,6 @@
+config.py
+/downloads_cafe
+*.xlsx
+*.html
+/__pycache__
+/chrome_temp_profile
