@@ -8,11 +8,24 @@ from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.common.by import By
 from datetime import datetime
 import re
-from config import CAFE_ID, MENU_ID, START_DATE, END_DATE, DOWNLOAD_FOLDER, SUBJECT, EXCEL_HEADER
+from config import (
+    CAFE_ID,
+    MENU_ID,
+    START_DATE,
+    END_DATE,
+    DOWNLOAD_FOLDER,
+    SUBJECT,
+    EXCEL_HEADER1,
+    EXCEL_HEADER2,
+    Title1,
+    Title2,
+)
+
 
 # ---------------- 유틸 함수 ----------------
 def safe_filename(name):
     return "".join(c for c in name if c.isalnum() or c in " _-").strip()[:30]
+
 
 def download_image(url, path):
     try:
@@ -21,6 +34,7 @@ def download_image(url, path):
     except Exception as e:
         print(f"❌ 이미지 다운로드 실패: {url} - {e}")
         return False
+
 
 def parse_date(date_text):
     date_text = re.sub(r"[^\d.:]", "", date_text).strip()
@@ -42,16 +56,28 @@ def parse_date(date_text):
             return dt
         except:
             continue
-    
+
     return None
+
 
 # ---------------- 로그인 ----------------
 def login_naver(driver):
     print("\n🔑 네이버 로그인 창을 엽니다. 직접 로그인 해주세요.")
     driver.get("https://nid.naver.com/nidlogin.login")
     driver.maximize_window()
-    input("✋ 로그인이 완료되면 Enter 키를 누르세요... ")
-    print("✅ 로그인 완료")
+
+    print("⏳ 로그인 감지 중... (최대 120초 대기)")
+
+    from selenium.webdriver.support.ui import WebDriverWait
+
+    try:
+        WebDriverWait(driver, 120).until(
+            lambda d: "nidlogin" not in d.current_url and "naver.com" in d.current_url
+        )
+        print("✅ 로그인 감지됨!")
+    except:
+        print("⚠️ 로그인 감지 실패 - 계속 진행합니다.")
+
 
 # ---------------- 게시글 리스트 ----------------
 def get_articles_from_page(driver, page_num):
@@ -61,14 +87,16 @@ def get_articles_from_page(driver, page_num):
     articles = []
 
     if page_num == 1:
-        with open('debug_page.html', 'w', encoding='utf-8') as f:
+        with open("debug_page.html", "w", encoding="utf-8") as f:
             f.write(driver.page_source)
         print("  🐛 debug_page.html 생성됨")
 
     try:
-        posts = driver.find_elements(By.CSS_SELECTOR, '.article-board.m-tcol-c:not(#upperArticleList) .article')
+        posts = driver.find_elements(
+            By.CSS_SELECTOR, ".article-board.m-tcol-c:not(#upperArticleList) .article"
+        )
         if not posts:
-            posts = driver.find_elements(By.CSS_SELECTOR, '.article')
+            posts = driver.find_elements(By.CSS_SELECTOR, ".article")
             print(f"  🔍 방법2: {len(posts)}개 발견")
         if not posts:
             posts = driver.find_elements(By.CSS_SELECTOR, "a[href*='/articles/']")
@@ -82,7 +110,7 @@ def get_articles_from_page(driver, page_num):
         for idx, post in enumerate(posts):
             try:
                 href = ""
-                if post.tag_name == 'a':
+                if post.tag_name == "a":
                     href = post.get_attribute("href")
                 else:
                     link = post.find_element(By.CSS_SELECTOR, "a[href*='/articles/']")
@@ -94,7 +122,9 @@ def get_articles_from_page(driver, page_num):
                 parent = post
                 for _ in range(5):
                     parent = parent.find_element(By.XPATH, "..")
-                    date_elements = parent.find_elements(By.CSS_SELECTOR, ".td_date, [class*='date'], [class*='Date']")
+                    date_elements = parent.find_elements(
+                        By.CSS_SELECTOR, ".td_date, [class*='date'], [class*='Date']"
+                    )
                     if date_elements:
                         date_text = date_elements[0].text.strip()
                         break
@@ -121,6 +151,7 @@ def get_articles_from_page(driver, page_num):
 
     return articles
 
+
 # ---------------- 상세페이지 정보 추출 ----------------
 def extract_article_info(driver, url):
     driver.get(url)
@@ -132,10 +163,10 @@ def extract_article_info(driver, url):
         "nickname": "",
         "img_urls": [],
         "url": url,
-        "is_notice": False
+        "is_notice": False,
     }
 
-    match = re.search(r'/articles/(\d+)', url)
+    match = re.search(r"/articles/(\d+)", url)
     if match:
         info["post_number"] = match.group(1)
 
@@ -144,7 +175,14 @@ def extract_article_info(driver, url):
         time.sleep(0.5)
 
         # 공지 체크
-        notice_selectors = [".notice-article", ".board-notice", "[class*='notice']", "[class*='Notice']", "span.icon-badge.notice", ".article-board__notice"]
+        notice_selectors = [
+            ".notice-article",
+            ".board-notice",
+            "[class*='notice']",
+            "[class*='Notice']",
+            "span.icon-badge.notice",
+            ".article-board__notice",
+        ]
         for sel in notice_selectors:
             if driver.find_elements(By.CSS_SELECTOR, sel):
                 info["is_notice"] = True
@@ -152,7 +190,9 @@ def extract_article_info(driver, url):
 
         # 제목
         try:
-            title_elem = driver.find_element(By.CSS_SELECTOR, "h3.title_text, .tit_txt, .article_title, .title")
+            title_elem = driver.find_element(
+                By.CSS_SELECTOR, "h3.title_text, .tit_txt, .article_title, .title"
+            )
             title_text = title_elem.text.strip()
             if any(k in title_text for k in ["[공지]", "[필독]", "[안내]", "[NOTICE]"]):
                 info["is_notice"] = True
@@ -162,18 +202,30 @@ def extract_article_info(driver, url):
 
         # 닉네임
         try:
-            nickname_elem = driver.find_element(By.CSS_SELECTOR, ".nickname, .nick_name")
+            nickname_elem = driver.find_element(
+                By.CSS_SELECTOR, ".nickname, .nick_name"
+            )
             info["nickname"] = nickname_elem.text.strip()
         except:
             pass
 
         # 이미지 URL
         try:
-            article_viewer = driver.find_element(By.CSS_SELECTOR, "#article_viewer, .article_viewer")
+            article_viewer = driver.find_element(
+                By.CSS_SELECTOR, "#article_viewer, .article_viewer"
+            )
             imgs = article_viewer.find_elements(By.TAG_NAME, "img")
             for img in imgs:
                 src = img.get_attribute("src") or img.get_attribute("data-src")
-                if src and any(d in src for d in ["phinf.pstatic.net", "blogfiles.naver.net", "postfiles.pstatic.net", "cafeskthumb"]):
+                if src and any(
+                    d in src
+                    for d in [
+                        "phinf.pstatic.net",
+                        "blogfiles.naver.net",
+                        "postfiles.pstatic.net",
+                        "cafeskthumb",
+                    ]
+                ):
                     src = src.replace("type=w800", "type=w2000")
                     if src not in info["img_urls"]:
                         info["img_urls"].append(src)
@@ -183,17 +235,27 @@ def extract_article_info(driver, url):
         driver.switch_to.default_content()
     except:
         driver.switch_to.default_content()
-    
+
     return info
+
 
 # ---------------- 크롤러 ----------------
 def crawl_naver_cafe():
     print("🚀 네이버 카페 크롤러 시작")
     os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
+    # 워크북 및 시트 초기화
     wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.append(EXCEL_HEADER)
+
+    ws_count = wb.active
+    ws_count.title = [Title1]
+    ws_count.append(EXCEL_HEADER1)
+
+    ws_detail = wb.create_sheet(title=[Title2])
+    ws_detail.append(EXCEL_HEADER2)
+
+    # 닉네임별 건수 집계용 딕셔너리
+    teacher_count = {}
 
     options = webdriver.ChromeOptions()
     options.add_argument("--no-sandbox")
@@ -201,12 +263,14 @@ def crawl_naver_cafe():
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    options.add_experimental_option('useAutomationExtension', False)
+    options.add_experimental_option("useAutomationExtension", False)
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    driver.execute_script(
+        "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+    )
 
     login_naver(driver)
     time.sleep(2)
@@ -235,30 +299,32 @@ def crawl_naver_cafe():
 
             # 이미지 다운로드
             downloaded_images = []
-            if article_info['img_urls']:
-                safe_title = safe_filename(article_info['title'])
-                post_num = article_info['post_number']
-                total_images = len(article_info['img_urls'])
+            if article_info["img_urls"]:
+                safe_nick = safe_filename(article_info["nickname"]) or "unknown"
+                post_num = article_info["post_number"]
+                total_images = len(article_info["img_urls"])
 
-                for idx, img_url in enumerate(article_info['img_urls'], 1):
+                for idx, img_url in enumerate(article_info["img_urls"], 1):
                     if total_images == 1:
-                        filename = f"{post_num} {safe_title}.jpg"
+                        filename = f"{safe_nick}_{post_num}.jpg"
                     else:
-                        filename = f"{post_num} {safe_title}_{idx}.jpg"
+                        filename = f"{safe_nick}_{post_num}_{idx}.jpg"
                     filepath = os.path.join(DOWNLOAD_FOLDER, filename)
                     if download_image(img_url, filepath):
                         downloaded_images.append(img_url)
 
-            # 이미지 저장 후 아이디 가져오기
+            # 아이디 가져오기
             user_id = ""
             try:
-                driver.get(article_info['url'])
+                driver.get(article_info["url"])
                 driver.switch_to.frame("cafe_main")
                 time.sleep(0.5)
-                profile_img = driver.find_element(By.CSS_SELECTOR, "img[alt='프로필 사진']")
+                profile_img = driver.find_element(
+                    By.CSS_SELECTOR, "img[alt='프로필 사진']"
+                )
                 driver.execute_script("arguments[0].click();", profile_img)
                 time.sleep(0.5)
-                # 팝업 내 user_id 요소 대기
+
                 from selenium.webdriver.support.ui import WebDriverWait
                 from selenium.webdriver.support import expected_conditions as EC
 
@@ -270,7 +336,9 @@ def crawl_naver_cafe():
                 except:
                     user_id = ""
                 try:
-                    close_btn = driver.find_element(By.CSS_SELECTOR, ".layer_close, .close_btn")
+                    close_btn = driver.find_element(
+                        By.CSS_SELECTOR, ".layer_close, .close_btn"
+                    )
                     driver.execute_script("arguments[0].click();", close_btn)
                     time.sleep(0.2)
                 except:
@@ -278,19 +346,31 @@ def crawl_naver_cafe():
             except Exception as e:
                 print(f"    ⚠️ 아이디 가져오기 실패: {e}")
 
-            # 엑셀 기록
-            ws.append([
-                article_info['post_number'],
-                article_info['title'],
-                article_info['nickname'],
-                user_id,
-                '',
-                '',
-                art["date"].strftime("%Y-%m-%d"),
-                article_info['url'],
-                ';'.join(downloaded_images),
-                len(downloaded_images)
-            ])
+            nickname = article_info["nickname"]
+
+            # Title1 시트에 행 추가
+            ws_detail.append(
+                [
+                    nickname,
+                    art["date"].strftime("%Y%m%d"),
+                    article_info["url"],
+                    ";".join(downloaded_images),
+                ]
+            )
+
+            # 닉네임별 건수 집계
+            if nickname not in teacher_count:
+                teacher_count[nickname] = {
+                    "아이디": user_id,
+                    "건수": 0,
+                    "이미지수": 0,
+                }
+            teacher_count[nickname]["건수"] += 1
+            teacher_count[nickname]["이미지수"] += len(downloaded_images)
+            # 아이디는 처음 가져온 값 유지, 비어있으면 업데이트
+            if not teacher_count[nickname]["아이디"] and user_id:
+                teacher_count[nickname]["아이디"] = user_id
+
             total_collected += 1
             time.sleep(0.8)
 
@@ -300,11 +380,28 @@ def crawl_naver_cafe():
         time.sleep(1.5)
 
     driver.quit()
-    excel_filename = f"{START_DATE:%m}월{SUBJECT}({START_DATE:%Y%m%d}~{END_DATE:%Y%m%d}).xlsx"
+
+    # Title2 시트에 집계 데이터 작성
+    for nickname, data in teacher_count.items():
+        ws_count.append(
+            [
+                nickname,
+                data["아이디"],
+                "",
+                "",
+                data["건수"],
+                data["이미지수"],
+            ]
+        )
+
+    excel_filename = (
+        f"{START_DATE:%m}월{SUBJECT}({START_DATE:%Y%m%d}~{END_DATE:%Y%m%d}).xlsx"
+    )
     wb.save(excel_filename)
     print(f"✅ 크롤링 완료! 총 {total_collected}개 게시글 수집")
     print(f"💾 엑셀: {excel_filename}")
     print(f"📁 이미지 폴더: {DOWNLOAD_FOLDER}/")
+
 
 if __name__ == "__main__":
     crawl_naver_cafe()
